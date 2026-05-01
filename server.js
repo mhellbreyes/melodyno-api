@@ -13,7 +13,7 @@ const db = mysql.createConnection({
   port: process.env.MYSQLPORT
 });
 
-// 🔥 CONNECT (with safe handling)
+// 🔥 CONNECT
 db.connect(err => {
   if (err) {
     console.error("DB CONNECTION ERROR:", err);
@@ -30,7 +30,7 @@ app.post("/activate", (req, res) => {
     if (!key || !hwid) return res.send("INVALID");
 
     db.query(
-      "SELECT hwid, status FROM licenses WHERE license_key = ?",
+      "SELECT hwid, status FROM license WHERE license_key = ?",
       [key],
       (err, results) => {
         if (err) {
@@ -47,7 +47,7 @@ app.post("/activate", (req, res) => {
         // 🔥 FIRST ACTIVATION
         if (!row.hwid) {
           db.query(
-            "UPDATE licenses SET hwid=? WHERE license_key=?",
+            "UPDATE license SET hwid=? WHERE license_key=?",
             [hwid, key],
             (updateErr) => {
               if (updateErr) {
