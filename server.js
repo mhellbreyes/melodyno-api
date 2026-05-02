@@ -13,74 +13,75 @@ const db = mysql.createConnection({
   port: process.env.MYSQLPORT
 });
 
-// 🔥 CONNECT
 db.connect(err => {
   if (err) {
-    console.error("DB CONNECTION ERROR:", err);
+    console.error("DB ERROR:", err);
   } else {
     console.log("DB CONNECTED");
   }
 });
 
-// 🔐 ACTIVATE ENDPOINT (FINAL FIXED)
+// 🔐 ACTIVATE
 app.post("/activate", (req, res) => {
-  try {
-    const { key, hwid } = req.body;
+  const { key, hwid } = req.body;
 
-    console.log("ACTIVATE HIT:", key, hwid);
+  if (!key || !hwid) return res.send("INVALID");
 
-    if (!key || !hwid) return res.send("INVALID");
+  db.query(
+    "SELECT hwid, status FROM license WHERE license_key = ?",
+    [key],
+    (err, results) => {
+      if (err) return res.send("ERROR");
+      if (results.length === 0) return res.send("INVALID");
 
-    db.query(
-      "SELECT hwid, status FROM license WHERE license_key = ?",
-      [key],
-      (err, results) => {
-        if (err) {
-          console.error("QUERY ERROR:", err);
-          return res.send("ERROR");
-        }
+      const row = results[0];
 
-        if (results.length === 0) return res.send("INVALID");
+      if ((row.status || "").toUpperCase() !== "ACTIVE")
+        return res.send("BLOCKED");
 
-        const row = results[0];
+      // ✅ allow first use or same device
+      if (!row.hwid || row.hwid === hwid) {
+        db.query(
+          "UPDATE license SET hwid=? WHERE license_key=?",
+          [hwid, key]
+        );
 
-        // 🔥 CASE-INSENSITIVE STATUS CHECK
-        if ((row.status || "").toUpperCase() !== "ACTIVE") {
-          return res.send("BLOCKED");
-        }
-
-        // 🔥 MAIN FIX (handles race condition + duplicate calls)
-        if (!row.hwid || row.hwid === hwid) {
-
-          // Save HWID if first time
-          db.query(
-            "UPDATE license SET hwid=? WHERE license_key=?",
-            [hwid, key],
-            (updateErr) => {
-              if (updateErr) {
-                console.error("UPDATE ERROR:", updateErr);
-              }
-            }
-          );
-
-          return res.send("OK");
-        }
-
-        // 🔥 USED ON OTHER DEVICE
-        return res.send("USED");
+        return res.send("OK");
       }
-    );
-  } catch (e) {
-    console.error("SERVER ERROR:", e);
-    return res.send("ERROR");
-  }
+
+      return res.send("USED");
+    }
+  );
 });
 
-// 🧪 TEST ROUTE
+// 🔐 REVALIDATE
+app.post("/check", (req, res) => {
+  const { key } = req.body;
+
+  if (!key) return res.send("INVALID");
+
+  db.query(
+    "SELECT status FROM license WHERE license_key = ?",
+    [key],
+    (err, results) => {
+      if (err) return res.send("ERROR");
+      if (results.length === 0) return res.send("INVALID");
+
+      const row = results[0];
+
+      if ((row.status || "").toUpperCase() !== "ACTIVE")
+        return res.send("BLOCKED");
+
+      return res.send("OK");
+    }
+  );
+});
+
+// 🧪 TEST
 app.get("/", (req, res) => {
   res.send("MeloDyno API Running");
 });
 
-// 🚀 START SERVER
+// 🚀 START
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server running on port " + PORT));
