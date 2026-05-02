@@ -1,10 +1,10 @@
 const express = require("express");
 const mysql = require("mysql2");
-const app = express();
 
+const app = express();
 app.use(express.json());
 
-// 🔥 DB CONNECTION (Railway env vars)
+// 🔥 DB CONNECTION
 const db = mysql.createConnection({
   host: process.env.MYSQLHOST,
   user: process.env.MYSQLUSER,
@@ -22,10 +22,12 @@ db.connect(err => {
   }
 });
 
-// 🔐 ACTIVATE ENDPOINT
+// 🔐 ACTIVATE ENDPOINT (FINAL FIXED)
 app.post("/activate", (req, res) => {
   try {
     const { key, hwid } = req.body;
+
+    console.log("ACTIVATE HIT:", key, hwid);
 
     if (!key || !hwid) return res.send("INVALID");
 
@@ -42,30 +44,30 @@ app.post("/activate", (req, res) => {
 
         const row = results[0];
 
-        if (row.status !== "ACTIVE") return res.send("BLOCKED");
+        // 🔥 CASE-INSENSITIVE STATUS CHECK
+        if ((row.status || "").toUpperCase() !== "ACTIVE") {
+          return res.send("BLOCKED");
+        }
 
-        // 🔥 FIRST ACTIVATION
-        if (!row.hwid) {
+        // 🔥 MAIN FIX (handles race condition + duplicate calls)
+        if (!row.hwid || row.hwid === hwid) {
+
+          // Save HWID if first time
           db.query(
             "UPDATE license SET hwid=? WHERE license_key=?",
             [hwid, key],
             (updateErr) => {
               if (updateErr) {
                 console.error("UPDATE ERROR:", updateErr);
-                return res.send("ERROR");
               }
-              return res.send("OK");
             }
           );
-        }
-        // 🔥 SAME DEVICE
-        else if (row.hwid === hwid) {
+
           return res.send("OK");
         }
-        // 🔥 DIFFERENT DEVICE
-        else {
-          return res.send("USED");
-        }
+
+        // 🔥 USED ON OTHER DEVICE
+        return res.send("USED");
       }
     );
   } catch (e) {
